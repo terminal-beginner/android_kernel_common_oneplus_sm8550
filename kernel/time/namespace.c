@@ -55,6 +55,7 @@ ktime_t do_timens_ktime_to_host(clockid_t clockid, ktime_t tim,
 
 	return tim;
 }
+EXPORT_SYMBOL_GPL(do_timens_ktime_to_host);
 
 static struct ucounts *inc_time_namespaces(struct user_namespace *ns)
 {
@@ -465,3 +466,4 @@ struct time_namespace init_time_ns = {
 	.ns.ops		= &timens_operations,
 	.frozen_offsets	= true,
 };
+EXPORT_SYMBOL_GPL(init_time_ns);
