@@ -1143,7 +1143,7 @@ static int f2fs_prepare_decomp_mem(struct decompress_io_ctx *dic,
 static void f2fs_release_decomp_mem(struct decompress_io_ctx *dic,
 		bool bypass_destroy_callback, bool pre_alloc);
 
-static int f2fs_fixed_input_decompress_cluster(struct decompress_io_ctx *dic)
+static int f2fs_fixed_input_decompress_cluster(struct decompress_io_ctx *dic, bool in_task)
 {
 	struct f2fs_sb_info *sbi = F2FS_I_SB(dic->inode);
 	struct f2fs_inode_info *fi = F2FS_I(dic->inode);
@@ -1396,7 +1396,7 @@ void f2fs_decompress_cluster(struct decompress_io_ctx *dic, bool in_task)
 				dic->cluster_size, fi->i_compress_algorithm);
 
 	if (f2fs_compress_layout(dic->inode) == COMPRESS_FIXED_INPUT)
-		ret = f2fs_fixed_input_decompress_cluster(dic);
+		ret = f2fs_fixed_input_decompress_cluster(dic, in_task);
 #ifdef CONFIG_F2FS_FS_COMPRESSION_FIXED_OUTPUT
 	else
 		ret = f2fs_fixed_output_decompress_cluster(dic);
