@@ -176,7 +176,7 @@ static void update_min_rtt(struct sock *sk)
 
 	/* Check if new lower min RTT was found. If so, set it directly */
 	if (ca->curr_rtt < ca->curr_min_rtt) {
-		ca->curr_min_rtt = max(ca->curr_rtt, 1);
+		ca->curr_min_rtt = max(ca->curr_rtt, 1U);
 		/* Probe for the min RTT in ROCCET_NEXT_MIN_RTT_PROBE seconds
 		 * if no other update occurs.
 		 */
@@ -246,13 +246,13 @@ static void update_srrtt(struct sock *sk)
 	 * rtt to a safe value.
 	 */
 	if (ca->curr_rtt < ca->curr_min_rtt) {
-		ca->curr_rtt = max(ca->curr_rtt, 1);
+		ca->curr_rtt = max(ca->curr_rtt, 1U);
 		ca->curr_min_rtt = ca->curr_rtt;
 	}
 
 	/* Avoid division by zero */
 	if (ca->curr_min_rtt == 0) {
-		ca->curr_min_rtt = max(ca->curr_min_rtt, 1);
+		ca->curr_min_rtt = max(ca->curr_min_rtt, 1U);
 		return; // skip srRTT update
 	}
 
@@ -308,7 +308,7 @@ static void roccet_min_rtt_probe(struct sock *sk, u32 now)
 	/* Start of min RTT probing*/
 	if (ca->probe_min_rtt_until == 0) {
 		/* Probe 1*RTT or at least 200ms */
-		interval = max(200 * USEC_PER_MSEC, ca->curr_rtt);
+		interval = max(200U * USEC_PER_MSEC, ca->curr_rtt);
 
 		/* This is to handle deep shared buffers with loss-based
 		 * congestion control like CUBIC. If the cwnd is not limited
@@ -318,9 +318,9 @@ static void roccet_min_rtt_probe(struct sock *sk, u32 now)
 		 * to the tcp flow because the cwnd is not fully utilized and
 		 * we set the cwnd to its previous value after probing.
 		 */
-		probe_cwnd = max(tcp_snd_cwnd(tp) / 2, TCP_INIT_CWND);
+		probe_cwnd = max(tcp_snd_cwnd(tp) / 2, (u32)TCP_INIT_CWND);
 		if (!tcp_is_cwnd_limited(sk))
-			probe_cwnd = max(tcp_snd_cwnd(tp) / 3, TCP_INIT_CWND);
+			probe_cwnd = max(tcp_snd_cwnd(tp) / 3, (u32)TCP_INIT_CWND);
 
 		ca->probe_min_rtt_until = now + interval;
 		ca->cwnd_before_min_rtt_probe = tcp_snd_cwnd(tp);
@@ -586,7 +586,7 @@ static void roccettcp_cong_avoid(struct sock *sk, u32 acked)
 				 * is already full.
 				 */
 				tcp_snd_cwnd_set(tp, max(tcp_snd_cwnd(tp) / 2,
-							 TCP_INIT_CWND));
+							 (u32)TCP_INIT_CWND));
 			} else {
 				tcp_sk(sk)->snd_ssthresh =
 					tcp_snd_cwnd(tp) -
@@ -683,7 +683,7 @@ static void roccettcp_cong_avoid(struct sock *sk, u32 acked)
 			return;
 
 		bictcp_update(ca, tcp_snd_cwnd(tp), acked);
-		tcp_cong_avoid_ai(tp, max(1, ca->cnt), acked);
+		tcp_cong_avoid_ai(tp, max(1U, ca->cnt), acked);
 	}
 }
 
