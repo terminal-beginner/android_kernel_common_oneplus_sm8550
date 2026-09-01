@@ -308,7 +308,7 @@ static void roccet_min_rtt_probe(struct sock *sk, u32 now)
 	/* Start of min RTT probing*/
 	if (ca->probe_min_rtt_until == 0) {
 		/* Probe 1*RTT or at least 200ms */
-		interval = max(200U * USEC_PER_MSEC, ca->curr_rtt);
+		interval = max((u32)(200U * USEC_PER_MSEC), ca->curr_rtt);
 
 		/* This is to handle deep shared buffers with loss-based
 		 * congestion control like CUBIC. If the cwnd is not limited
