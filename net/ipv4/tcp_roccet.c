@@ -45,7 +45,7 @@
  * this behaves the same as the original Reno.
  */
 
-#include "linux/limits.h"
+#include <linux/printk.h>
 #include <linux/math64.h>
 #include <linux/mm.h>
 #include <linux/module.h>
@@ -62,7 +62,7 @@
  */
 #define ROCCET_ALPHA_TIMES_100 20
 
-/* min RTT probe period in seconds */
+/* min RTT probe period in ms */
 #define ROCCET_NEXT_MIN_RTT_PROBE 5000
 
 /* State in which roccet currently operates */
@@ -112,8 +112,11 @@ struct roccettcp {
 	u16 ack_rate_curr_rate;	/* Current ACK-rate */
 	u16 ack_rate_cnt;	/* Used for counting acks */
 
-	bool ece_received;	/* Set to true if an ECE bit was received */
-	enum roccet_state state; /* State in which roccet currently operates */
+	bool ece_received : 1;
+	enum roccet_state state : 3;
+	bool was_idle : 1;
+	bool is_in_recovery : 1;
+	bool initial_round_completed : 1;
 };
 
 /* Parameters that are specific to the ROCCET-Algorithm */
@@ -127,9 +130,13 @@ MODULE_PARM_DESC(ack_rate_diff_ss,
 		 "ROCCET's threshold to exit slow start if ACK-rate defer by given amount of segments.");
 
 static int fast_convergence __read_mostly = 1;
-static int beta __read_mostly = 717; /* = 717/1024 (BICTCP_BETA_SCALE) */
+#define BETA_PARAM_DEFAULT 717
+#define BIC_SCALE_PARAM_DEFAULT 41
+static int beta_param __read_mostly = BETA_PARAM_DEFAULT;
+static int beta __read_mostly;
 static int initial_ssthresh __read_mostly;
-static int bic_scale __read_mostly = 41;
+static int bic_scale_param __read_mostly = BIC_SCALE_PARAM_DEFAULT;
+static int bic_scale __read_mostly;
 static int tcp_friendliness __read_mostly = 1;
 
 static u32 cube_rtt_scale __read_mostly;
@@ -139,12 +146,12 @@ static u64 cube_factor __read_mostly;
 /* Note parameters that are used for precomputing scale factors are read-only */
 module_param(fast_convergence, int, 0644);
 MODULE_PARM_DESC(fast_convergence, "turn on/off fast convergence");
-module_param(beta, int, 0644);
-MODULE_PARM_DESC(beta, "beta for multiplicative increase");
+module_param(beta_param, int, 0644);
+MODULE_PARM_DESC(beta_param, "beta for multiplicative increase");
 module_param(initial_ssthresh, int, 0644);
 MODULE_PARM_DESC(initial_ssthresh, "initial value of slow start threshold");
-module_param(bic_scale, int, 0444);
-MODULE_PARM_DESC(bic_scale,
+module_param(bic_scale_param, int, 0444);
+MODULE_PARM_DESC(bic_scale_param,
 		 "scale (scaled by 1024) value for bic function (bic_scale/1024)");
 module_param(tcp_friendliness, int, 0644);
 MODULE_PARM_DESC(tcp_friendliness, "turn on/off tcp friendliness");
@@ -168,6 +175,7 @@ static void roccettcp_reset(struct roccettcp *ca)
 
 	/* Start state is LAUNCH */
 	ca->state = LAUNCH;
+	ca->initial_round_completed = false;
 }
 
 static void update_min_rtt(struct sock *sk)
@@ -206,7 +214,7 @@ static void update_ack_rate(struct sock *sk, u32 acked, u32 now)
 	const s32 idle_threshold = USEC_PER_SEC * 2;
 
 	// Check if the time has arrived in the new interval
-	if (time_delta < -interval) {
+	if (time_delta < -interval || ca->was_idle) {
 		/* Check if the connection was idle for X seconds
 		 * (e.g. no ACK for X seconds)
 		 */
@@ -226,6 +234,7 @@ static void update_ack_rate(struct sock *sk, u32 acked, u32 now)
 			ca->ack_rate_cnt =
 				acked; // start counting for the new interval
 		}
+		ca->was_idle = false;
 	} else {
 		// Cap the ack count to avoid overflow
 		ca->ack_rate_cnt = min_t(u32, ca->ack_rate_cnt + acked,
@@ -238,8 +247,6 @@ static void update_ack_rate(struct sock *sk, u32 acked, u32 now)
 static void update_srrtt(struct sock *sk)
 {
 	struct roccettcp *ca = inet_csk_ca(sk);
-	u32 rrtt;
-
 	/* Avoid integer overflow in the calculation below.
 	 * This could occur in cases where we have not yet
 	 * received an RTT sample. In these cases, set the
@@ -264,13 +271,15 @@ static void update_srrtt(struct sock *sk)
 	 *
 	 * 0 is a valid value for rrtt.
 	 */
-	rrtt = div_u64(100 * (u64)(ca->curr_rtt - ca->curr_min_rtt),
+	{
+		u32 rrtt = div_u64(100 * (u64)(ca->curr_rtt - ca->curr_min_rtt),
 		       ca->curr_min_rtt);
 
 	// (1 - alpha) * srRTT + alpha * rRTT
 	ca->curr_srrtt = ((100 - ROCCET_ALPHA_TIMES_100) * ca->curr_srrtt +
 			  ROCCET_ALPHA_TIMES_100 * rrtt) /
-			 100;
+			  100;
+	}
 }
 
 /* Do a ROCCET congestion event.
@@ -356,11 +365,45 @@ static void roccet_min_rtt_probe(struct sock *sk, u32 now)
 	}
 }
 
+static int param_check(bool use_defaults)
+{
+	int ret = 0;
+
+	if (beta_param <= 0 || beta_param >= BICTCP_BETA_SCALE) {
+		if (!use_defaults)
+			ret = -EINVAL;
+		beta = BETA_PARAM_DEFAULT;
+	} else {
+		beta = beta_param;
+	}
+	if (bic_scale_param <= 0) {
+		if (!use_defaults)
+			ret = -EINVAL;
+		bic_scale = BIC_SCALE_PARAM_DEFAULT;
+	} else {
+		bic_scale = bic_scale_param;
+	}
+	return ret;
+}
+
+static void param_precompute(void)
+{
+	beta_scale = 8 * (BICTCP_BETA_SCALE + beta) / 3 /
+			(BICTCP_BETA_SCALE - beta);
+	cube_rtt_scale = bic_scale * 10;
+	cube_factor = 1ull << (10 + 3 * BICTCP_HZ);
+	do_div(cube_factor, bic_scale * 10);
+}
+
 static void roccettcp_init(struct sock *sk)
 {
 	struct roccettcp *ca = inet_csk_ca(sk);
 
+	param_check(true);
+	param_precompute();
 	roccettcp_reset(ca);
+	ca->interval_snd_seq_start = tcp_sk(sk)->snd_nxt;
+	ca->interval_una_seq_start = tcp_sk(sk)->snd_una;
 
 	if (initial_ssthresh)
 		tcp_sk(sk)->snd_ssthresh = initial_ssthresh;
@@ -388,6 +431,7 @@ static void roccettcp_cwnd_event(struct sock *sk, enum tcp_ca_event ev)
 		if (after(ca->epoch_start, now))
 			ca->epoch_start = now;
 	}
+	ca->was_idle = true;
 }
 
 /* calculate the cubic root of x using a table lookup followed by one
@@ -569,7 +613,7 @@ static void roccettcp_cong_avoid(struct sock *sk, u32 acked)
 		 */
 		if ((ca->curr_srrtt > sr_rtt_upper_bound &&
 		     get_ack_rate_diff(ca) <= ack_rate_diff_ss) ||
-		    !tcp_is_cwnd_limited(sk)) {
+		     (!tcp_is_cwnd_limited(sk) && ca->initial_round_completed)) {
 			ca->epoch_start = 0;
 
 			/* Handle initial slow start.
@@ -620,19 +664,8 @@ static void roccettcp_cong_avoid(struct sock *sk, u32 acked)
 		/* Calculate if more bytes was send than received
 		 * in the time interval.
 		 */
-		if (before(tp->snd_nxt, ca->interval_snd_seq_start)) {
-			/* We had a wrap around in seq no counter */
-			send = (~0U - ca->interval_snd_seq_start + tp->snd_nxt);
-		} else {
-			send = (tp->snd_nxt - ca->interval_snd_seq_start);
-		}
-		if (before(tp->snd_una, ca->interval_una_seq_start)) {
-			/* We had a wrap around in seq no counter */
-			received = (~0U - ca->interval_una_seq_start +
-				    tp->snd_una);
-		} else {
-			received = (tp->snd_una - ca->interval_una_seq_start);
-		}
+		send = tp->snd_nxt - ca->interval_snd_seq_start;
+		received = tp->snd_una - ca->interval_una_seq_start;
 
 		/* Here we use a guard space of 1% of the current cwnd.
 		 * We do this to avoid a false positive evaluation due
@@ -727,7 +760,7 @@ static u32 roccettcp_recalc_ssthresh(struct sock *sk)
 		ca->cwnd_before_min_rtt_probe =
 			max((cwnd * beta) / BICTCP_BETA_SCALE, 2U);
 
-		return cwnd;
+		return tcp_snd_cwnd(tp);
 	}
 
 	/* Handle ECN as ROCCET congestion event. */
@@ -764,9 +797,11 @@ static void roccettcp_state(struct sock *sk, u8 new_state)
 	struct roccettcp *ca = inet_csk_ca(sk);
 	struct tcp_sock *tp = tcp_sk(sk);
 
+	ca->is_in_recovery = false;
 	if (new_state == TCP_CA_Loss) {
 		roccettcp_reset(ca);
 	} else if (new_state == TCP_CA_Recovery) {
+		ca->is_in_recovery = true;
 		tcp_sk(sk)->snd_ssthresh = roccettcp_recalc_ssthresh(sk);
 		tcp_snd_cwnd_set(tp, tcp_sk(sk)->snd_ssthresh);
 	}
@@ -825,12 +860,6 @@ static void roccet_control(struct sock *sk, const struct rate_sample *rs)
 	update_min_rtt(sk);
 	update_srrtt(sk);
 
-	/* Set values for send and receive rate */
-	if (ca->interval_snd_seq_start == 0) {
-		ca->interval_snd_seq_start = tp->snd_nxt;
-		ca->interval_una_seq_start = tp->snd_una;
-	}
-
 	/* Update roccet state */
 	if (tcp_in_slow_start(tp)) {
 		ca->state = LAUNCH;
@@ -853,7 +882,9 @@ static void roccet_control(struct sock *sk, const struct rate_sample *rs)
 	/* Increase the cwnd.
 	 * Loss recovery is handled in roccettcp_state()
 	 */
-	roccettcp_cong_avoid(sk, rs->acked_sacked);
+	if (!ca->is_in_recovery)
+		roccettcp_cong_avoid(sk, rs->acked_sacked);
+	ca->initial_round_completed = true;
 
 	/* Adjust pacing rate. The code here is similar to the
 	 * pacing rate adjustments in tcp_input.c tcp_cong_control().
@@ -895,9 +926,14 @@ static void roccet_control(struct sock *sk, const struct rate_sample *rs)
 		   min_t(u64, rate, READ_ONCE(sk->sk_max_pacing_rate)));
 }
 
+static u32 roccettcp_ssthresh(struct sock *sk)
+{
+	return tcp_sk(sk)->snd_ssthresh;
+}
+
 static struct tcp_congestion_ops roccet_tcp __read_mostly = {
 	.init = roccettcp_init,
-	.ssthresh = roccettcp_recalc_ssthresh,
+	.ssthresh = roccettcp_ssthresh,
 	.set_state = roccettcp_state,
 	.undo_cwnd = tcp_reno_undo_cwnd,
 	.cwnd_event = roccettcp_cwnd_event,
@@ -910,29 +946,17 @@ static struct tcp_congestion_ops roccet_tcp __read_mostly = {
 
 static int __init roccettcp_register(void)
 {
+	int param_err;
+
 	BUILD_BUG_ON(sizeof(struct roccettcp) > ICSK_CA_PRIV_SIZE);
-
-	/*
-	 * Validate parameters to avoid division by zero errors.
-	 */
-	if (beta <= 0 || beta >= BICTCP_BETA_SCALE) {
-		pr_err("roccet: beta must be between 0 and %d\n",
-		       BICTCP_BETA_SCALE);
-		return -EINVAL;
-	}
-
-	if (bic_scale <= 0) {
-		pr_err("roccet: bic_scale must be positive\n");
-		return -EINVAL;
-	}
+	param_err = param_check(false);
+	if (param_err)
+		return param_err;
 
 	/* Precompute a bunch of the scaling factors that are used per-packet
 	 * based on SRTT of 100ms
 	 */
-	beta_scale =
-		8 * (BICTCP_BETA_SCALE + beta) / 3 / (BICTCP_BETA_SCALE - beta);
-
-	cube_rtt_scale = (bic_scale * 10); /* 1024*c/rtt */
+	param_precompute();
 
 	/* calculate the "K" for (wmax-cwnd) = c/rtt * K^3
 	 *  so K = cubic_root( (wmax-cwnd)*rtt/c )
@@ -948,11 +972,6 @@ static int __init roccettcp_register(void)
 	 */
 
 	/* 1/c * 2^2*bictcp_HZ * srtt */
-	cube_factor = 1ull << (10 + 3 * BICTCP_HZ); /* 2^40 */
-
-	/* divide by bic_scale and by constant Srtt (100ms) */
-	do_div(cube_factor, bic_scale * 10);
-
 	return tcp_register_congestion_control(&roccet_tcp);
 }
 
@@ -967,4 +986,3 @@ module_exit(roccettcp_unregister);
 MODULE_AUTHOR("Lukas Prause, Tim Füchsel");
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("ROCCET TCP");
-
