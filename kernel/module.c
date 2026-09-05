@@ -71,6 +71,34 @@
 #define ARCH_SHF_SMALL 0
 #endif
 
+#ifndef __GENKSYMS__
+#include <linux/bootconfig.h>
+#endif
+
+DEFINE_STATIC_KEY_TRUE(vendor_debloat_key);
+
+static int __init parse_oplus_boot_mode(char *boot_mode_oplus)
+{
+	const char *mode;
+
+	mode = (char *)xbc_find_value("androidboot.mode", NULL);
+	if (!mode)
+		mode = boot_mode_oplus;
+
+	if (!mode)
+		return 0;
+
+	if (strcmp(mode, "normal") == 0 || strcmp(mode, "reboot") == 0) {
+		pr_info("Oplus Boot Mode: Standard state (%s). Debloater remains ACTIVE.\n", mode);
+	} else {
+		pr_info("Oplus Boot Mode: Non Standard detected (%s). Disabling module debloater.\n", mode);
+		static_branch_disable(&vendor_debloat_key);
+	}
+
+	return 1;
+}
+__setup("oplusboot.mode=", parse_oplus_boot_mode);
+
 /*
  * Modules' sections will be aligned on page boundaries
  * to ensure complete separation of code and data, but
@@ -3584,13 +3612,14 @@ int __weak module_frob_arch_sections(Elf_Ehdr *hdr,
 
 /* module_blacklist is a comma-separated list of module names */
 static char *module_blacklist;
+static const char *custom_module_blacklist = CONFIG_DEBLOAT_VENDOR_MODULES;
 static bool blacklisted(const char *module_name)
 {
 	const char *p;
 	size_t len;
 
 	if (!module_blacklist)
-		return false;
+		goto custom_blacklist;
 
 	for (p = module_blacklist; *p; p += len) {
 		len = strcspn(p, ",");
@@ -3599,6 +3628,22 @@ static bool blacklisted(const char *module_name)
 		if (p[len] == ',')
 			len++;
 	}
+
+	custom_blacklist:
+	if (static_branch_likely(&vendor_debloat_key)) {
+		if (!custom_module_blacklist || custom_module_blacklist[0] == '\0')
+			goto out;
+
+		for (p = custom_module_blacklist; *p; p += len) {
+			len = strcspn(p, ",");
+			if (strlen(module_name) == len && !memcmp(module_name, p, len))
+				return true;
+			if (p[len] == ',')
+				len++;
+		}
+	}
+
+	out:
 	return false;
 }
 core_param(module_blacklist, module_blacklist, charp, 0400);
