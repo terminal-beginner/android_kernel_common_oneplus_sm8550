@@ -50,6 +50,11 @@
 #define CREATE_TRACE_POINTS
 #include <trace/events/filemap.h>
 
+#undef CREATE_TRACE_POINTS
+#ifndef __GENKSYMS__
+#include <trace/hooks/mm.h>
+#endif
+
 /*
  * FIXME: remove all knowledge of the buffer layer from the core VM
  */
@@ -909,6 +914,7 @@ noinline int __add_to_page_cache_locked(struct page *page,
 	page->mapping = mapping;
 	page->index = offset;
 
+	trace_android_vh_filemap_add_to_page_cache(mapping, page, offset);
 	if (!huge) {
 		error = mem_cgroup_charge(page, NULL, gfp);
 		if (error)
@@ -1985,6 +1991,9 @@ repeat:
 			return page;
 		page = NULL;
 	}
+
+	trace_android_vh_pagecache_get_page(mapping, index, fgp_flags,
+					gfp_mask, page);
 	if (!page)
 		goto no_page;
 
@@ -2709,7 +2718,7 @@ ssize_t filemap_read(struct kiocb *iocb, struct iov_iter *iter,
 	if (unlikely(!iov_iter_count(iter)))
 		return 0;
 
-	iov_iter_truncate(iter, inode->i_sb->s_maxbytes);
+	iov_iter_truncate(iter, inode->i_sb->s_maxbytes - iocb->ki_pos);
 	pagevec_init(&pvec);
 	trace_android_vh_filemap_read(filp, iocb->ki_pos, iov_iter_count(iter));
 
@@ -3350,6 +3359,8 @@ retry_find:
 		}
 	}
 
+	trace_android_vh_filemap_fault_pre_page_locked(page);
+
 	if (!lock_page_maybe_drop_mmap(vmf, page, &fpin))
 		goto out_retry;
 
@@ -3637,6 +3648,7 @@ vm_fault_t filemap_map_pages(struct vm_fault *vmf,
 		addr += (xas.xa_index - last_pgoff) << PAGE_SHIFT;
 		vmf->pte += xas.xa_index - last_pgoff;
 		last_pgoff = xas.xa_index;
+		trace_android_vh_filemap_pages(page);
 
 		if (!pte_none(*vmf->pte))
 			goto unlock;
@@ -3665,6 +3677,7 @@ vm_fault_t filemap_map_pages(struct vm_fault *vmf,
 		continue;
 unlock:
 		unlock_page(head);
+		trace_android_vh_filemap_page_mapped(head);
 		put_page(head);
 	} while ((head = next_map_page(mapping, &xas, end_pgoff)) != NULL);
 	pte_unmap_unlock(vmf->pte, vmf->ptl);
@@ -3730,7 +3743,7 @@ int generic_file_mmap(struct file *file, struct vm_area_struct *vma)
  */
 int generic_file_readonly_mmap(struct file *file, struct vm_area_struct *vma)
 {
-	if ((vma->vm_flags & VM_SHARED) && (vma->vm_flags & VM_MAYWRITE))
+	if (vma_is_shared_maywrite(vma))
 		return -EINVAL;
 	return generic_file_mmap(file, vma);
 }
