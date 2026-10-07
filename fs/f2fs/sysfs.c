@@ -466,7 +466,6 @@ static ssize_t f2fs_sbi_show(struct f2fs_attr *a,
 	}
 #endif
 
-	ui = (unsigned int *)(ptr + a->offset);
 	return __sbi_show_value(a, sbi, buf, ptr + a->offset);
 }
 
