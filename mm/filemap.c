@@ -3124,6 +3124,7 @@ static struct file *do_sync_mmap_readahead(struct vm_fault *vmf)
 	}
 #endif
 
+	trace_android_vh_page_cache_read(file->f_inode, ra->start, ra->size);
 	do_page_cache_ra(&ractl, ra->size, ra->async_size);
 	return fpin;
 }
@@ -3465,6 +3466,7 @@ page_not_uptodate:
 	 * and we need to check for errors.
 	 */
 	fpin = maybe_unlock_mmap_for_io(vmf, fpin);
+	trace_android_vh_page_cache_read(file->f_inode, offset, 1);
 	error = filemap_read_page(file, mapping, page);
 	if (fpin)
 		goto out_retry;
@@ -3799,6 +3801,8 @@ static struct page *do_read_cache_page(struct address_space *mapping,
 {
 	struct page *page;
 	int err;
+
+	trace_android_vh_page_cache_read(mapping->host, index, 1);
 repeat:
 	page = find_get_page(mapping, index);
 	if (!page) {

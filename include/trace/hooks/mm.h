@@ -191,6 +191,9 @@ DECLARE_HOOK(android_vh_mark_page_accessed,
 DECLARE_HOOK(android_vh_page_cache_forced_ra,
 	TP_PROTO(struct readahead_control *ractl, unsigned long req_count, bool *do_forced_ra),
 	TP_ARGS(ractl, req_count, do_forced_ra));
+DECLARE_HOOK(android_vh_page_cache_read,
+	TP_PROTO(struct inode *inode, pgoff_t index, unsigned long count),
+	TP_ARGS(inode, index, count));
 DECLARE_HOOK(android_vh_alloc_pages_reclaim_bypass,
 	TP_PROTO(gfp_t gfp_mask, int order, int alloc_flags,
 	int migratetype, struct page **page),
@@ -412,6 +415,15 @@ DECLARE_HOOK(android_vh_filemap_add_to_page_cache,
 DECLARE_HOOK(android_vh_init_adjust_zone_wmark,
 	TP_PROTO(struct zone *zone, u64 interval),
 	TP_ARGS(zone, interval));
+DECLARE_HOOK(android_vh_task_mem,
+	TP_PROTO(struct seq_file *m, struct mm_struct *mm),
+	TP_ARGS(m, mm));
+DECLARE_HOOK(android_vh_mm_free,
+	TP_PROTO(struct mm_struct *mm),
+	TP_ARGS(mm));
+DECLARE_HOOK(android_vh_mm_init,
+	TP_PROTO(struct mm_struct *mm),
+	TP_ARGS(mm));
 
 DECLARE_HOOK(android_vh_lock_folio_drop_mmap_start,
 	TP_PROTO(struct task_struct **tsk, struct vm_fault *vmf,
