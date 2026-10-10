@@ -1155,6 +1155,12 @@ static void roccet_cwnd_event_tx_start(struct sock *sk)
 	roccet_handle_state_transitions(sk, prev_state, jiffies_to_usecs(now));
 }
 
+static void roccet_cwnd_event(struct sock *sk, enum tcp_ca_event event)
+{
+	if (event == CA_EVENT_TX_START)
+		roccet_cwnd_event_tx_start(sk);
+}
+
 /* Handle different loss-states and perform adequate cwnd reductions.
  */
 static void roccet_state(struct sock *sk, u8 new_state)
@@ -1303,7 +1309,7 @@ static void roccet_drain_update(struct sock *sk, u32 now)
 	}
 }
 
-static void roccet_control(struct sock *sk, u32 ack, int flag,
+static void roccet_control(struct sock *sk,
 			   const struct rate_sample *rs)
 {
 	struct roccettcp *ca = inet_csk_ca(sk);
@@ -1371,7 +1377,7 @@ static struct tcp_congestion_ops roccet_tcp __read_mostly = {
 	.ssthresh = roccet_recalc_ssthresh,
 	.set_state = roccet_state,
 	.undo_cwnd = tcp_reno_undo_cwnd,
-	.cwnd_event_tx_start = roccet_cwnd_event_tx_start,
+	.cwnd_event = roccet_cwnd_event,
 	.pkts_acked = roccet_acked,
 	.cong_control = roccet_control,
 	.owner = THIS_MODULE,
