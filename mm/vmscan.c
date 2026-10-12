@@ -1889,8 +1889,7 @@ free_it:
 						     nr_reclaimed);
 #endif
 			destroy_compound_page(page);
-		}
-		else
+		} else {
 			list_add(&page->lru, &free_pages);
 		}
 		continue;
