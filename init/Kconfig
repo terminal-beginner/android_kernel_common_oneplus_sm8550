@@ -871,7 +871,7 @@ config UCLAMP_BUCKETS_COUNT
 	  precision.
 
 	  If in doubt, use the default value.
-
+source "kernel/oplus_cpu/sched/Kconfig"
 endmenu
 
 #
