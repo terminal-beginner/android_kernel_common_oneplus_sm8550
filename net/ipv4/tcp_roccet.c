@@ -329,7 +329,7 @@ static void update_min_rtt(struct roccettcp *ca)
 	 * since the rtt values are initialized to U32_MAX.
 	 */
 	if (ca->curr_rtt < ca->curr_min_rtt) {
-		ca->curr_min_rtt = max(ca->curr_rtt, 1);
+		ca->curr_min_rtt = max(ca->curr_rtt, 1U);
 		roccet_set_next_min_rtt_probe_ts(ca);
 	}
 }
@@ -402,7 +402,7 @@ static void update_srrtt(struct roccettcp *ca)
 	 * In these cases, set the rtt to a safe value.
 	 */
 	if (ca->curr_rtt < ca->curr_min_rtt) {
-		ca->curr_rtt = max(ca->curr_rtt, 1);
+		ca->curr_rtt = max(ca->curr_rtt, 1U);
 		ca->curr_min_rtt = ca->curr_rtt;
 	}
 
