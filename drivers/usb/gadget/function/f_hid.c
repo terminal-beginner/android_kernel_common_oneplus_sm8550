@@ -894,7 +894,7 @@ free_req_in:
 	}
 	spin_unlock_irqrestore(&hidg->write_spinlock, flags);
 
-disable_ep_in:
+disable_ep_in: __maybe_unused
 	if (hidg->in_ep)
 		usb_ep_disable(hidg->in_ep);
 
