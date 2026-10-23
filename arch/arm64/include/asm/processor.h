@@ -266,6 +266,8 @@ unsigned long __get_wchan(struct task_struct *p);
 
 unsigned long get_backtrace(struct task_struct *p, int i);
 
+unsigned long get_backtrace(struct task_struct *p, int i);
+
 void update_sctlr_el1(u64 sctlr);
 
 /* Thread switching */
@@ -296,9 +298,7 @@ static inline void prefetchw(const void *ptr)
 #define ARCH_HAS_SPINLOCK_PREFETCH
 static inline void spin_lock_prefetch(const void *ptr)
 {
-	asm volatile(ARM64_LSE_ATOMIC_INSN(
-		     "prfm pstl1strm, %a0",
-		     "nop") : : "p" (ptr));
+	/* No prefetch for LSE atomics */
 }
 
 extern unsigned long __ro_after_init signal_minsigstksz; /* sigframe size */
