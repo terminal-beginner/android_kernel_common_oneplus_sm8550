@@ -5087,12 +5087,13 @@ alloc_page_done:
 #ifdef CONFIG_CONT_PTE_HUGEPAGE
 	if (!swapcache && is_thp_fallback_swpin)
 		locked = lock_nr_pages_or_retry(basepages, vma->vm_mm, vmf->flags, HPAGE_CONT_PTE_NR);
-	else
+	else {
 #endif
-
-	trace_android_vh_do_swap_page_lock_check(page, vmf);
-	locked = lock_page_or_retry(page, vma->vm_mm, vmf->flags);
-
+		trace_android_vh_do_swap_page_lock_check(page, vmf);
+		locked = lock_page_or_retry(page, vma->vm_mm, vmf->flags);
+#ifdef CONFIG_CONT_PTE_HUGEPAGE
+	}
+#endif
 	delayacct_clear_flag(current, DELAYACCT_PF_SWAPIN);
 	if (!locked) {
 		ret |= VM_FAULT_RETRY;
@@ -6094,6 +6095,7 @@ static vm_fault_t do_fault_around(struct vm_fault *vmf)
 	if (vmf_may_cont_pte(vmf))
 		return 0;
 #endif
+
 	/*
 	 * Fault occurred in the padding region. There are no file-cache pages
 	 * to map in this region, so skip fault-around.

@@ -1478,6 +1478,7 @@ retry:
 			goto keep_locked;
 		}
 #endif
+
 		trace_android_vh_shrink_page_lock_owner_set(page);
 
 		VM_BUG_ON_PAGE(PageActive(page), page);
@@ -7271,8 +7272,8 @@ static bool kswapd_shrink_node(pg_data_t *pgdat,
 			if (!managed_zone(zone))
 				continue;
 
-		sc->nr_to_reclaim += max(high_wmark_pages(zone), SWAP_CLUSTER_MAX);
-	}
+			sc->nr_to_reclaim += max(high_wmark_pages(zone), SWAP_CLUSTER_MAX);
+		}
 	trace_android_rvh_kswapd_shrink_node(&sc->nr_to_reclaim);
 
 	/*

@@ -574,6 +574,8 @@ out_remove_cache:
 		ocfs2_remove_from_cache(INODE_CACHE(main_bm_inode), group_bh);
 
 out_free_group_bh:
+	if (ret < 0)
+		ocfs2_remove_from_cache(INODE_CACHE(inode), group_bh);
 	brelse(group_bh);
 
 out_unlock:
