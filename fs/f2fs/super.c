@@ -83,7 +83,7 @@ const char *f2fs_fault_name[FAULT_MAX] = {
 };
 
 int f2fs_build_fault_attr(struct f2fs_sb_info *sbi, unsigned long rate,
-							unsigned long type)
+							unsigned long long type)
 {
 	struct f2fs_fault_info *ffi = &F2FS_OPTION(sbi).fault_info;
 
@@ -97,7 +97,7 @@ int f2fs_build_fault_attr(struct f2fs_sb_info *sbi, unsigned long rate,
 	if (type) {
 		if (type >= BIT(FAULT_MAX))
 			return -EINVAL;
-		ffi->inject_type = (unsigned int)type;
+		ffi->inject_type = (unsigned long long)type;
 	}
 
 	if (!rate && !type)
@@ -975,7 +975,7 @@ static int parse_options(struct super_block *sb, char *options, bool is_remount)
 		case Opt_fault_type:
 			if (args->from && match_u64(args, &larg))
 				return -EINVAL;
-			if (f2fs_build_fault_attr(sbi, 0, arg))
+			if (f2fs_build_fault_attr(sbi, 0, larg))
 				return -EINVAL;
 			set_opt(sbi, FAULT_INJECTION);
 			break;
