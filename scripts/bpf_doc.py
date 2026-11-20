@@ -352,7 +352,7 @@ HELPERS
         print(header)
 
     def print_footer(self):
-        footer = '''
+        footer = r'''
 EXAMPLES
 ========
 
@@ -454,7 +454,7 @@ SEE ALSO
             one_arg = '{}{}'.format(comma, a['type'])
             if a['name']:
                 if a['star']:
-                    one_arg += ' {}**\ '.format(a['star'].replace('*', '\\*'))
+                    one_arg += r' {}**\ '.format(a['star'].replace('*', '\\*'))
                 else:
                     one_arg += '** '
                 one_arg += '*{}*\\ **'.format(a['name'])
