@@ -1281,7 +1281,6 @@ static struct binder_ref *binder_get_ref_for_node_olocked(
 	rb_link_node(&new_ref->rb_node_desc, parent, p);
 	rb_insert_color(&new_ref->rb_node_desc, &proc->refs_by_desc);
 
-skip_create_desc:
 	binder_node_lock(node);
 	hlist_add_head(&new_ref->node_entry, &node->refs);
 
